@@ -37,7 +37,16 @@ fn main() {
         windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
             windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
         );
+        // Keep the multithreaded COM apartment alive for the whole run. Without this it is torn
+        // down whenever the last thread that joined it (an HEIC decode) exits, and the WinRT
+        // factories cached by the toast notifications point at freed objects: an access violation
+        // on the next notification.
+        if let Err(e) = windows::Win32::System::Com::CoIncrementMTAUsage() {
+            log(&format!("CoIncrementMTAUsage failed: {e}"));
+        }
     }
+    // A panic in a release build has no console to print to; keep it in the log.
+    std::panic::set_hook(Box::new(|info| log(&format!("panic: {info}"))));
     let (config, first_run) = Config::load_or_create();
     i18n::init(&config.language);
     let tx = i18n::ui();
