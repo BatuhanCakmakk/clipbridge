@@ -32,48 +32,57 @@ The file goes to iCloud Drive → **Shortcuts** by default.
 
 | # | Action | Settings |
 |---|---|---|
-| 1 | **Get File** | Folder: **Shortcuts** · Path: `ClipBridge.txt` · **Error If Not Found**: on |
-| 2 | **Get Dictionary from Input** | Input: **File** |
-| 3 | **Get Dictionary Value** | Key: `url` |
-| 4 | **Set Variable** | Name: `Address` |
-| 5 | **Get Dictionary Value** | Key: `token`. Tap its input and pick **Dictionary** from step 2; it is filled in wrongly by default. |
-| 6 | **Set Variable** | Name: `Token` |
+| 1 | **Get File from Folder** | Folder: **Shortcuts** · Path: `ClipBridge.txt` · **Error If Not Found**: on |
+| 2 | **Get Dictionary Value** | Input: **File** · Key: `url` (the JSON file is turned into a dictionary automatically) |
+| 3 | **Set Variable** | Name: `Address` |
+| 4 | **Get Dictionary Value** | Key: `token`. Its input is filled in wrongly by default: long-press the input → **Select Variable** → **File** from step 1. |
+| 5 | **Set Variable** | Name: `Token` |
 
 If the file is missing, the shortcut stops with an error: "ClipBridge Setup" has not been run yet.
 
+Tip: to put a variable into a field, **long-press** the field → **Select Variable**. A short tap often opens the file picker or the keyboard instead.
+
 ## 3. Send to PC
+
+Links take a separate branch: iOS can't put a link into a form's **File** field ("WFURLContentItem produced no file representation"), so a link is sent in a **Text** field.
 
 | # | Action | Settings |
 |---|---|---|
-| 0 | **ⓘ** → **Show in Share Sheet** | On. Input types: Images, Files, Text, Rich Text, URLs, Media |
+| 0 | **ⓘ** → **Show in Share Sheet** | On. Input types: all |
 | 0 | "If there's no input" | **Get Clipboard** |
-| 1–6 | Read the settings (above) | |
-| 7 | **Repeat with Each** | Items: **Shortcut Input** |
-| 8 | Inside the loop: **Get Contents of URL** | URL: `Address` variable + `/clip` · Method: **POST** · Header: `X-Token` = `Token` variable · Request Body: **Form** → type **File**, key `file`, value **Repeat Item** |
-| 9 | After the loop: **Show Notification** (optional) | `Sent to PC` |
+| 1–5 | Read the settings (above) | |
+| 6 | **Repeat with Each** | Items: **Shortcut Input** |
+| 7 | **Text** | Content: only **Repeat Item** |
+| 8 | **If** | **Text** **begins with** `http` |
+| 9 | **Get Contents of URL** | URL: `[Address]/clip` · **POST** · Header `X-Token` = `[Token]` · **Form** → type **Text**, key `file`, value **Repeat Item** |
+| 10 | **Otherwise** | |
+| 11 | **Get Contents of URL** | Same as 9, but the form field's type is **File** |
+| 12 | **End If**, **End Repeat** | |
 
 ```
-Get File  Shortcuts/ClipBridge.txt
-Get Dictionary from Input
-Get Dictionary Value "url"    →  Set Variable Address
-Get Dictionary Value "token"  →  Set Variable Token
+Get File from Folder  Shortcuts/ClipBridge.txt
+Get Value for "url" in File    →  Set Variable Address
+Get Value for "token" in File  →  Set Variable Token
 Repeat with Each item in Shortcut Input
-    Get Contents of URL  [Address]/clip
-        Method: POST · Headers: X-Token = [Token]
-        Request Body: Form → file (File) = Repeat Item
+    Text: [Repeat Item]
+    If Text begins with http
+        Get Contents of URL [Address]/clip   POST · X-Token = [Token] · Form: file (Text) = Repeat Item
+    Otherwise
+        Get Contents of URL [Address]/clip   POST · X-Token = [Token] · Form: file (File) = Repeat Item
+    End If
 End Repeat
 ```
 
-In the form, `file` goes in the **key** field and **Repeat Item** in the **value** field. Swapped, the PC answers "No file field in the form".
+In the form, `file` goes in the **key** field and **Repeat Item** in the **value** field. Swapped, the PC answers "No file field in the form". The same goes for the header: key `X-Token`, value **Token**.
 
 ## 4. Get from PC
 
 | # | Action | Settings |
 |---|---|---|
-| 1–6 | Read the settings (above) | |
-| 7 | **Get Contents of URL** | URL: `[Address]/clip` · Method: **GET** · Header: `X-Token` = `[Token]` |
-| 8 | **Copy to Clipboard** | Input: **Contents of URL** |
-| 9 | **Show Notification** (optional) | `Copied from PC` |
+| 1–5 | Read the settings (above) | |
+| 6 | **Get Contents of URL** | URL: `[Address]/clip` · Method: **GET** · Header: `X-Token` = `[Token]` |
+| 7 | **Copy to Clipboard** | Input: **Contents of URL** |
+| 8 | **Show Notification** (optional) | `Copied from PC` |
 
 ## 5. Triggers
 

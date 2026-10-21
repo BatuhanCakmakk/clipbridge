@@ -184,6 +184,10 @@ fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_l
         body = part.data;
         mime = part.mime;
         filename = part.filename.as_deref().and_then(util::sanitize_filename).or(filename);
+    } else if mime == "application/x-www-form-urlencoded" {
+        // A Shortcuts "Form" whose fields are all text (e.g. a link) is sent URL-encoded instead.
+        body = crate::multipart::urlencoded_field(&body).ok_or(tx.no_form_field)?;
+        mime = "text/plain".into();
     }
     if body.is_empty() {
         return Err(tx.empty_body.into());
