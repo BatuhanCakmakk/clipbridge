@@ -2,6 +2,7 @@
 
 mod clip;
 mod config;
+mod i18n;
 mod mdns;
 mod multipart;
 mod rtf;
@@ -38,12 +39,14 @@ fn main() {
         );
     }
     let (config, first_run) = Config::load_or_create();
+    i18n::init(&config.language);
+    let tx = i18n::ui();
     let port = config.port;
     unsafe {
         // One instance per port (a second copy with its own config may run on another port).
         CreateMutexW(std::ptr::null(), 0, util::wide(&format!("Local\\ClipBridge-{port}")).as_ptr());
         if GetLastError() == ERROR_ALREADY_EXISTS {
-            util::message_box("ClipBridge zaten çalışıyor. Saatin yanındaki simgeye bak.");
+            util::message_box(tx.already_running);
             return;
         }
     }
@@ -56,7 +59,7 @@ fn main() {
         Ok(s) => s,
         Err(e) => {
             log(&format!("cannot listen on port {port}: {e}"));
-            util::message_box(&format!("{port} portu açılamadı: {e}\n\nBaşka bir program kullanıyor olabilir. config.json içinden portu değiştirebilirsin."));
+            util::message_box(&i18n::fill(tx.port_failed, &[&port, &e]));
             return;
         }
     };
@@ -70,21 +73,21 @@ fn main() {
 
     // ----- tray menu -----
     let menu = Menu::new();
-    let title = MenuItem::new("ClipBridge çalışıyor", false, None);
-    let mut addr_items = vec![MenuItem::new(format!("Adres: {local_url}"), false, None)];
+    let title = MenuItem::new(tx.menu_running, false, None);
+    let mut addr_items = vec![MenuItem::new(i18n::fill(tx.menu_address, &[&local_url]), false, None)];
     addr_items.extend(addresses.iter().map(|a| MenuItem::new(format!("IP: {a}"), false, None)));
-    let show_info = MenuItem::new("Kurulum / bağlantı bilgileri (QR)", true, None);
-    let copy_addr = MenuItem::new("Adresi kopyala", true, None);
-    let copy_token = MenuItem::new("Token'ı kopyala", true, None);
-    let open_dir = MenuItem::new("Gelen dosyalar klasörünü aç", true, None);
-    let open_log = MenuItem::new("Günlüğü aç", true, None);
-    let notif_item = CheckMenuItem::new("Bildirim göster", true, notifications.load(Ordering::Relaxed), None);
-    let links_item = CheckMenuItem::new("Gelen linkleri tarayıcıda aç", true, app.config.lock().unwrap().open_links, None);
+    let show_info = MenuItem::new(tx.menu_setup, true, None);
+    let copy_addr = MenuItem::new(tx.menu_copy_address, true, None);
+    let copy_token = MenuItem::new(tx.menu_copy_token, true, None);
+    let open_dir = MenuItem::new(tx.menu_open_folder, true, None);
+    let open_log = MenuItem::new(tx.menu_open_log, true, None);
+    let notif_item = CheckMenuItem::new(tx.menu_notifications, true, notifications.load(Ordering::Relaxed), None);
+    let links_item = CheckMenuItem::new(tx.menu_open_links, true, app.config.lock().unwrap().open_links, None);
     let autostart_on = autostart_enabled();
     let autostart = Arc::new(AtomicBool::new(autostart_on));
-    let autostart_item = CheckMenuItem::new("Windows ile başlat", true, autostart_on, None);
-    let update_item = MenuItem::new(format!("Güncellemeleri denetle (v{})", env!("CARGO_PKG_VERSION")), true, None);
-    let quit = MenuItem::new("Çıkış", true, None);
+    let autostart_item = CheckMenuItem::new(tx.menu_autostart, true, autostart_on, None);
+    let update_item = MenuItem::new(i18n::fill(tx.menu_check_updates, &[&env!("CARGO_PKG_VERSION")]), true, None);
+    let quit = MenuItem::new(tx.menu_quit, true, None);
 
     menu.append(&title).unwrap();
     for item in &addr_items {
@@ -178,7 +181,7 @@ fn main() {
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
             if msg.hwnd.is_null() && msg.message == WM_UPDATE_FOUND {
                 if let Some(r) = release.lock().unwrap().as_ref() {
-                    update_item.set_text(format!("Yeni sürüm v{} — indir", r.version));
+                    update_item.set_text(i18n::fill(tx.menu_update_available, &[&r.version]));
                 }
                 continue;
             }
@@ -191,7 +194,7 @@ fn main() {
 
 /// Opens the connection page served by our own server (only reachable from this PC).
 fn show_connection_page(port: u16) {
-    let _ = std::process::Command::new("explorer").arg(format!("http://127.0.0.1:{port}/baglanti")).spawn();
+    let _ = std::process::Command::new("explorer").arg(format!("http://127.0.0.1:{port}/setup")).spawn();
 }
 
 /// Checks GitHub shortly after start and then once a day (unless `update_check` is off).
@@ -215,17 +218,17 @@ fn spawn_update_checks(app: Arc<App>, release: Arc<Mutex<Option<update::Release>
 fn check_now(release: Arc<Mutex<Option<update::Release>>>, main_thread: u32) {
     std::thread::spawn(move || match update::check() {
         Ok(Some(r)) => found_update(r, &release, main_thread),
-        Ok(None) => util::notify(true, format!("ClipBridge güncel (v{}).", env!("CARGO_PKG_VERSION"))),
+        Ok(None) => util::notify(true, i18n::fill(i18n::ui().up_to_date, &[&env!("CARGO_PKG_VERSION")])),
         Err(e) => {
             log(&format!("update check failed: {e}"));
-            util::notify(true, "Güncelleme denetlenemedi. İnternet bağlantısını kontrol et.".into());
+            util::notify(true, i18n::ui().update_failed.into());
         }
     });
 }
 
 fn found_update(r: update::Release, release: &Mutex<Option<update::Release>>, main_thread: u32) {
     log(&format!("update available: v{}", r.version));
-    util::notify(true, format!("Yeni sürüm var: v{}. Tepsi menüsünden indirebilirsin.", r.version));
+    util::notify(true, i18n::fill(i18n::ui().update_found, &[&r.version]));
     *release.lock().unwrap() = Some(r);
     unsafe { PostThreadMessageW(main_thread, WM_UPDATE_FOUND, 0, 0) };
 }

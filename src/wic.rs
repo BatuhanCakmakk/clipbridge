@@ -19,13 +19,13 @@ pub fn decode(data: &[u8]) -> Result<RgbaImage, String> {
         stream.InitializeFromMemory(data).map_err(|e| e.to_string())?;
         let decoder = factory
             .CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
-            .map_err(|e| format!("Windows bu resmi cozemedi (HEIF/HEVC eklentisi?): {e}"))?;
+            .map_err(|e| format!("Windows could not decode the image (HEIF/HEVC extensions installed?): {e}"))?;
         let frame = decoder.GetFrame(0).map_err(|e| e.to_string())?;
         let rgba = WICConvertBitmapSource(&GUID_WICPixelFormat32bppRGBA, &frame).map_err(|e| e.to_string())?;
         let (mut w, mut h) = (0u32, 0u32);
         rgba.GetSize(&mut w, &mut h).map_err(|e| e.to_string())?;
         let mut pixels = vec![0u8; w as usize * h as usize * 4];
         rgba.CopyPixels(std::ptr::null(), w * 4, &mut pixels).map_err(|e| e.to_string())?;
-        RgbaImage::from_raw(w, h, pixels).ok_or_else(|| "bozuk resim boyutu".to_string())
+        RgbaImage::from_raw(w, h, pixels).ok_or_else(|| "bad image size".to_string())
     }
 }

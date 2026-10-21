@@ -3,7 +3,7 @@
 //!   GET  /ping  -> "ok" (checks address + token)
 //!   POST /clip  -> body goes to the Windows clipboard (text, image or file)
 //!   GET  /clip  -> current Windows clipboard (text, image as PNG, file, or several files as ZIP)
-//!   GET  /baglanti -> setup page with the QR code (only from the PC itself, no token)
+//!   GET  /setup -> setup page with the QR code (only from the PC itself, no token)
 //!
 //! Every request must carry the `X-Token` header. Optional `X-Filename` (URL-encoded) names files.
 
@@ -17,6 +17,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 
 use crate::clip::{self, ClipContent, ClipImage};
 use crate::config::Config;
+use crate::i18n::{self, fill, Texts};
 use crate::util::{self, log, notify};
 
 const MAX_BODY: u64 = 1024 * 1024 * 1024; // 1 GB
@@ -81,35 +82,37 @@ fn handle(mut req: Request, app: &App) {
     };
 
     let from_this_pc = req.remote_addr().is_some_and(|a| a.ip().is_loopback());
-    let resp = if method == Method::Get && path == "/baglanti" {
+    // Replies go to the phone, in the phone's language.
+    let tx = i18n::from_accept_language(header(&req, "Accept-Language").as_deref());
+    let resp = if method == Method::Get && (path == "/setup" || path == "/baglanti") {
         // Shows the token, so only the PC itself may open it, never another device on the network.
         if from_this_pc {
             let cfg = app.config.lock().unwrap().clone();
             Response::from_string(connection_page(&cfg)).with_header(hdr("Content-Type", "text/html; charset=utf-8"))
         } else {
-            text_response(403, "Bu sayfa sadece PC'nin kendisinden acilabilir.")
+            text_response(403, tx.page_only_local)
         }
     } else if !token_ok(header(&req, "X-Token"), &token) {
         log(&format!("{peer} {method} {path} -> 401 wrong or missing token"));
-        text_response(401, "Token hatali. Kisayoldaki X-Token degerini kontrol et.")
+        text_response(401, tx.bad_token)
     } else {
         match (&method, path.as_str()) {
             (Method::Get, "/ping") => text_response(200, "ok"),
-            (Method::Post, "/clip") => match receive(&mut req, app, notifications, open_links, started) {
+            (Method::Post, "/clip") => match receive(&mut req, app, tx, notifications, open_links, started) {
                 Ok(msg) => text_response(200, &msg),
                 Err(e) => {
                     log(&format!("receive failed: {e}"));
-                    text_response(500, &format!("Hata: {e}"))
+                    text_response(500, &fill(tx.error, &[&e]))
                 }
             },
             (Method::Get, "/clip") => match send() {
                 Ok(r) => r,
                 Err(e) => {
                     log(&format!("send failed: {e}"));
-                    text_response(500, &format!("Hata: {e}"))
+                    text_response(500, &fill(tx.error, &[&e]))
                 }
             },
-            _ => text_response(404, "Bilinmeyen adres"),
+            _ => text_response(404, tx.unknown_path),
         }
     };
     let code = resp.status_code().0;
@@ -119,41 +122,51 @@ fn handle(mut req: Request, app: &App) {
     let _ = req.respond(resp);
 }
 
-/// Setup page: a QR code the "ClipBridge Kurulum" shortcut scans, plus the same values as text
+/// Setup page: a QR code the "ClipBridge Setup" shortcut scans, plus the same values as text
 /// (large enough to copy with the iPhone camera's Live Text) for setting up a shortcut by hand.
 fn connection_page(cfg: &Config) -> String {
+    let tx = i18n::ui();
     let token = &cfg.token;
     let local_url = cfg.local_url();
-    let setup = serde_json::json!({ "adres": local_url, "token": token }).to_string();
+    let setup = serde_json::json!({ "url": local_url, "token": token }).to_string();
     let qr = qrcode::QrCode::new(setup.as_bytes())
         .map(|code| code.render::<qrcode::render::svg::Color>().min_dimensions(300, 300).quiet_zone(true).build())
         .unwrap_or_default();
     let grouped: Vec<String> = token.as_bytes().chunks(4).map(|c| String::from_utf8_lossy(c).into_owned()).collect();
     let ips: String = util::lan_ips().iter().map(|ip| format!("<div class=s>http://{ip}:{}</div>", cfg.port)).collect();
+    let repo = crate::update::REPO;
+    let link = format!(r#"<a href="https://github.com/{repo}{}">github.com/{repo}</a>"#, tx.readme_setup);
     format!(
-        r#"<!doctype html><meta charset=utf-8><title>ClipBridge kurulum</title>
+        r#"<!doctype html><html lang={lang}><meta charset=utf-8><title>{title}</title>
 <style>body{{font-family:Segoe UI,sans-serif;margin:40px;color:#1d1d1f;background:#fff;max-width:900px}}h1{{font-weight:500}}
 .row{{display:flex;gap:48px;flex-wrap:wrap;align-items:flex-start}}.qr svg{{width:300px;height:300px}}
 .l{{color:#666;margin-top:24px}}.v{{font:600 30px Consolas,monospace;letter-spacing:1px;margin:6px 0;word-break:break-all}}
 .s{{font:18px Consolas,monospace;color:#444}}.n{{color:#555;line-height:1.6}}ol{{line-height:1.8}}a{{color:#0a66d8}}</style>
-<h1>ClipBridge kurulum</h1>
+<h1>{title}</h1>
 <div class=row><div class=qr>{qr}</div><div>
-<ol><li>iPhone'a üç kestirmeyi kur: <a href="https://github.com/{repo}#kurulum">github.com/{repo}</a></li>
-<li><b>ClipBridge Kurulum</b> kestirmesini çalıştır.</li>
-<li>Açılan kamerayı bu QR koda tut. Bitti.</li></ol>
-<p class=n>QR kodu yalnızca bu bilgisayarda gösterilir. İçinde adres ve token var, ekran görüntüsünü paylaşma.</p>
+<ol><li>{step1}</li><li>{step2}</li><li>{step3}</li></ol>
+<p class=n>{warning}</p>
 </div></div>
-<div class=l>Adres</div><div class=v>{local_url}</div>
-<div class=l>Ağ adı çalışmazsa IP adresi (modem değiştirebilir)</div>{ips}
-<div class=l>Token (X-Token başlığı; 4'erli gruplar okumayı kolaylaştırmak için, tiresiz de yazılabilir)</div><div class=v>{grouped}</div>"#,
-        repo = crate::update::REPO,
+<div class=l>{address}</div><div class=v>{local_url}</div>
+<div class=l>{ip_fallback}</div>{ips}
+<div class=l>{token_label}</div><div class=v>{grouped}</div>"#,
+        lang = tx.html_lang,
+        title = tx.page_title,
+        step1 = fill(tx.page_step1, &[&link]),
+        step2 = tx.page_step2,
+        step3 = tx.page_step3,
+        warning = tx.page_qr_warning,
+        address = tx.page_address,
+        ip_fallback = tx.page_ip_fallback,
+        token_label = tx.page_token,
         grouped = grouped.join("-"),
     )
 }
 
 // ---------- phone -> PC ----------
 
-fn receive(req: &mut Request, app: &App, notifications: bool, open_links: bool, started: Instant) -> Result<String, String> {
+fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_links: bool, started: Instant) -> Result<String, String> {
+    let ui = i18n::ui();
     let content_type = header(req, "Content-Type").unwrap_or_default();
     let mut mime = content_type.split(';').next().unwrap_or("").trim().to_lowercase();
     let mut filename = header(req, "X-Filename")
@@ -161,19 +174,19 @@ fn receive(req: &mut Request, app: &App, notifications: bool, open_links: bool, 
         .and_then(|v| util::sanitize_filename(&v));
 
     let mut body = Vec::new();
-    req.as_reader().take(MAX_BODY + 1).read_to_end(&mut body).map_err(|e| format!("okuma hatasi: {e}"))?;
+    req.as_reader().take(MAX_BODY + 1).read_to_end(&mut body).map_err(|e| fill(tx.read_failed, &[&e]))?;
     if body.len() as u64 > MAX_BODY {
-        return Err("icerik 1 GB sinirini asiyor".into());
+        return Err(tx.too_large.into());
     }
     // Shortcuts "Form" body: the file (with its name and type) is one part of a multipart upload.
     if mime == "multipart/form-data" {
-        let part = crate::multipart::first_part(&body, &content_type).ok_or("formda dosya alani bulunamadi")?;
+        let part = crate::multipart::first_part(&body, &content_type).ok_or(tx.no_form_field)?;
         body = part.data;
         mime = part.mime;
         filename = part.filename.as_deref().and_then(util::sanitize_filename).or(filename);
     }
     if body.is_empty() {
-        return Err("bos icerik geldi (pano bos olabilir)".into());
+        return Err(tx.empty_body.into());
     }
 
     let ext = filename
@@ -189,8 +202,8 @@ fn receive(req: &mut Request, app: &App, notifications: bool, open_links: bool, 
         clip::set_rich_text(&plain, &body)?;
         app.batch.lock().unwrap().0.clear();
         let chars = plain.chars().count();
-        notify(notifications, format!("Biçimli metin alındı ({chars} karakter) — Ctrl+V"));
-        return Ok(format!("ok: bicimli metin ({chars} karakter)"));
+        notify(notifications, fill(ui.got_rich, &[&chars]));
+        return Ok(fill(tx.sent_rich, &[&chars]));
     }
 
     // Text: a clipboard string from the phone. Real .txt/.csv files shared from the Files app keep
@@ -204,12 +217,12 @@ fn receive(req: &mut Request, app: &App, notifications: bool, open_links: bool, 
             app.batch.lock().unwrap().0.clear();
             if let Some(url) = util::single_link(text).filter(|_| open_links) {
                 util::open_url(url);
-                notify(notifications, format!("Link açıldı: {}", shorten(url, 60)));
-                return Ok("ok: link tarayicida acildi".into());
+                notify(notifications, fill(ui.got_link, &[&shorten(url, 60)]));
+                return Ok(tx.sent_link.into());
             }
             let chars = text.chars().count();
-            notify(notifications, format!("Metin alındı ({chars} karakter) — Ctrl+V"));
-            return Ok(format!("ok: metin ({chars} karakter)"));
+            notify(notifications, fill(ui.got_text, &[&chars]));
+            return Ok(fill(tx.sent_text, &[&chars]));
         }
     }
 
@@ -253,9 +266,9 @@ fn receive(req: &mut Request, app: &App, notifications: bool, open_links: bool, 
     let path = util::unique_path(&app.received_dir, &name);
     if heic_img.is_some() {
         // Reserve the name now; the file is written after the clipboard is set (see below).
-        std::fs::File::create(&path).map_err(|e| format!("dosya yazilamadi: {e}"))?;
+        std::fs::File::create(&path).map_err(|e| fill(tx.write_failed, &[&e]))?;
     } else {
-        std::fs::write(&path, &body).map_err(|e| format!("dosya yazilamadi: {e}"))?;
+        std::fs::write(&path, &body).map_err(|e| fill(tx.write_failed, &[&e]))?;
     }
     let path_str = path.to_string_lossy().into_owned();
 
@@ -294,12 +307,12 @@ fn receive(req: &mut Request, app: &App, notifications: bool, open_links: bool, 
 
     let shown = path.file_name().unwrap().to_string_lossy().into_owned();
     let msg = match (is_image, paths.len()) {
-        (true, _) => format!("Resim alındı: {shown} — Ctrl+V"),
-        (false, 1) => format!("Dosya alındı: {shown} — Ctrl+V"),
-        (false, n) => format!("{n} dosya alındı — Ctrl+V"),
+        (true, _) => fill(ui.got_image, &[&shown]),
+        (false, 1) => fill(ui.got_file, &[&shown]),
+        (false, n) => fill(ui.got_files, &[&n]),
     };
     notify(notifications, msg);
-    Ok(format!("ok: {}", if is_image { "resim" } else { "dosya" }))
+    Ok(if is_image { tx.sent_image } else { tx.sent_file }.into())
 }
 
 fn shorten(s: &str, max: usize) -> String {
@@ -344,7 +357,7 @@ fn encode_jpeg(img: &image::RgbaImage) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 92)
         .encode(rgb.as_raw(), rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)
-        .map_err(|e| format!("JPG kodlanamadi: {e}"))?;
+        .map_err(|e| format!("JPG encoding failed: {e}"))?;
     Ok(out)
 }
 
@@ -354,7 +367,7 @@ fn encode_png(img: &image::RgbaImage) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     PngEncoder::new_with_quality(&mut out, CompressionType::Fast, FilterType::Adaptive)
         .write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::Rgba8)
-        .map_err(|e| format!("PNG kodlanamadi: {e}"))?;
+        .map_err(|e| format!("PNG encoding failed: {e}"))?;
     Ok(out)
 }
 
@@ -371,12 +384,12 @@ fn send() -> Result<Resp, String> {
     match clip::get()? {
         ClipContent::Empty => Ok(text_response(204, "")),
         ClipContent::Text(t) => Ok(text_response(200, &t)),
-        ClipContent::Png(png) => Ok(file_response(png, "pano.png", "image/png")),
+        ClipContent::Png(png) => Ok(file_response(png, "clipboard.png", "image/png")),
         ClipContent::Bmp(bmp) => {
             let img = image::load_from_memory_with_format(&bmp, image::ImageFormat::Bmp).map_err(|e| e.to_string())?;
             let mut png = Vec::new();
             img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).map_err(|e| e.to_string())?;
-            Ok(file_response(png, "pano.png", "image/png"))
+            Ok(file_response(png, "clipboard.png", "image/png"))
         }
         ClipContent::Files(files) => {
             if files.len() == 1 && files[0].is_file() {
@@ -387,7 +400,7 @@ fn send() -> Result<Resp, String> {
                 Ok(file_response(data, &name, util::mime_for_ext(ext)))
             } else {
                 let zip = zip_paths(&files)?;
-                Ok(file_response(zip, &format!("pano-{}.zip", util::timestamp(false)), "application/zip"))
+                Ok(file_response(zip, &format!("clipboard-{}.zip", util::timestamp(false)), "application/zip"))
             }
         }
     }
@@ -418,7 +431,7 @@ fn zip_paths(paths: &[PathBuf]) -> Result<Vec<u8>, String> {
         Ok(())
     }
     for p in paths {
-        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "dosya".into());
+        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
         add(&mut zip, p, &name, opts)?;
     }
     Ok(zip.finish().map_err(|e| e.to_string())?.into_inner())

@@ -19,6 +19,13 @@ pub struct Config {
     /// Once a day, ask GitHub whether a newer release exists.
     #[serde(default = "default_true")]
     pub update_check: bool,
+    /// `auto` follows the Windows display language; or a code such as `en`, `tr`.
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+fn default_language() -> String {
+    "auto".into()
 }
 
 fn default_true() -> bool {
@@ -63,6 +70,7 @@ impl Config {
             hostname: default_hostname(),
             open_links: true,
             update_check: true,
+            language: default_language(),
         };
         cfg.save();
         (cfg, true)

@@ -2,14 +2,19 @@ use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
-/// Where config.json and the log live: a `ClipBridge-veri` folder next to the exe (portable, and
+/// Where config.json and the log live: a `ClipBridge-data` folder next to the exe (portable, and
 /// what the user sees in Explorer), or %APPDATA%\ClipBridge if that folder isn't writable.
 pub fn app_dir() -> PathBuf {
     static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| {
         if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
-            let dir = exe_dir.join("ClipBridge-veri");
-            let probe = dir.join(".yazilabilir");
+            let dir = exe_dir.join("ClipBridge-data");
+            // Folder name of the first, Turkish-only builds.
+            let old = exe_dir.join("ClipBridge-veri");
+            if !dir.exists() && old.is_dir() {
+                let _ = std::fs::rename(&old, &dir);
+            }
+            let probe = dir.join(".writable");
             if std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&probe, b"").is_ok() {
                 let _ = std::fs::remove_file(probe);
                 return dir;
