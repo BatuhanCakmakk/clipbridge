@@ -9,6 +9,8 @@
 
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -30,19 +32,60 @@ pub struct App {
     pub config: Mutex<Config>,
     pub received_dir: PathBuf,
     batch: Mutex<(Vec<String>, Instant)>,
+    /// Bumped by everything that puts something on the clipboard, so a file job that finishes
+    /// after newer content arrived doesn't overwrite it.
+    clip_seq: AtomicU64,
+    jobs: Mutex<Sender<FileJob>>,
+    jobs_rx: Mutex<Option<Receiver<FileJob>>>,
 }
 
 impl App {
     pub fn new(config: Config) -> App {
+        let (tx, rx) = channel();
         App {
             config: Mutex::new(config),
             received_dir: util::received_dir(),
             batch: Mutex::new((Vec::new(), Instant::now())),
+            clip_seq: AtomicU64::new(0),
+            jobs: Mutex::new(tx),
+            jobs_rx: Mutex::new(Some(rx)),
         }
+    }
+
+    fn next_clip(&self) -> u64 {
+        self.clip_seq.fetch_add(1, Ordering::SeqCst) + 1
     }
 }
 
+/// A received file waiting to be saved and put on the clipboard.
+struct FileJob {
+    body: Vec<u8>,
+    mime: String,
+    ext: Option<String>,
+    filename: Option<String>,
+    image_fmt: Option<image::ImageFormat>,
+    notifications: bool,
+    started: Instant,
+    seq: u64,
+}
+
 pub fn run(server: Server, app: Arc<App>) {
+    // Files are handled one at a time, in arrival order, so a multi-item share keeps its order.
+    if let Some(rx) = app.jobs_rx.lock().unwrap().take() {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            for job in rx {
+                let (t, notifications) = (Instant::now(), job.notifications);
+                match store_file(&app, job) {
+                    Ok(()) => log(&format!("file job done in {} ms", t.elapsed().as_millis())),
+                    Err(e) => {
+                        log(&format!("file job failed: {e}"));
+                        notify(notifications, fill(i18n::ui().error, &[&e]));
+                    }
+                }
+            }
+        });
+    }
     for req in server.incoming_requests() {
         let app = app.clone();
         std::thread::spawn(move || handle(req, &app));
@@ -71,7 +114,7 @@ fn token_ok(given: Option<String>, expected: &str) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-fn handle(mut req: Request, app: &App) {
+fn handle(mut req: Request, app: &Arc<App>) {
     let started = Instant::now();
     let peer = req.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default();
     let method = req.method().clone();
@@ -165,7 +208,7 @@ fn connection_page(cfg: &Config) -> String {
 
 // ---------- phone -> PC ----------
 
-fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_links: bool, started: Instant) -> Result<String, String> {
+fn receive(req: &mut Request, app: &Arc<App>, tx: &Texts, notifications: bool, open_links: bool, started: Instant) -> Result<String, String> {
     let ui = i18n::ui();
     let content_type = header(req, "Content-Type").unwrap_or_default();
     let mut mime = content_type.split(';').next().unwrap_or("").trim().to_lowercase();
@@ -204,6 +247,7 @@ fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_l
     if body.starts_with(br"{\rtf") && ext_allows_text_or_rtf(ext.as_deref()) {
         let plain = crate::rtf::to_text(&String::from_utf8_lossy(&body));
         clip::set_rich_text(&plain, &body)?;
+        app.next_clip();
         app.batch.lock().unwrap().0.clear();
         let chars = plain.chars().count();
         notify(notifications, fill(ui.got_rich, &[&chars]));
@@ -218,6 +262,7 @@ fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_l
     if ext_allows_text && looks_text && image_fmt.is_none() && body.len() <= MAX_TEXT && !body.contains(&0) {
         if let Ok(text) = std::str::from_utf8(&body) {
             clip::set_text(text)?;
+            app.next_clip();
             app.batch.lock().unwrap().0.clear();
             if let Some(url) = util::single_link(text).filter(|_| open_links) {
                 util::open_url(url);
@@ -230,7 +275,19 @@ fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_l
         }
     }
 
-    // Everything else is saved to Downloads\ClipBridge and put on the clipboard as a file.
+    // Everything else is saved to Downloads\ClipBridge and put on the clipboard as a file. Decoding
+    // a photo and building the clipboard image takes 0.3-2 s, so the phone gets its answer as soon
+    // as the upload is in, and the clipboard follows in the background.
+    let picture = image_fmt.is_some() || mime.starts_with("image/") || is_heif(&body);
+    let job = FileJob { body, mime, ext, filename, image_fmt, notifications, started, seq: app.next_clip() };
+    app.jobs.lock().unwrap().send(job).map_err(|e| e.to_string())?;
+    Ok(if picture { tx.sent_image } else { tx.sent_file }.into())
+}
+
+/// Saves a received file and puts it on the clipboard (as a picture too, when it is one).
+fn store_file(app: &App, job: FileJob) -> Result<(), String> {
+    let ui = i18n::ui();
+    let FileJob { body, mime, ext, filename, image_fmt, notifications, started, seq } = job;
     let ext_guess = ext
         .clone()
         .or_else(|| util::ext_for_mime(&mime).map(String::from))
@@ -270,9 +327,9 @@ fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_l
     let path = util::unique_path(&app.received_dir, &name);
     if heic_img.is_some() {
         // Reserve the name now; the file is written after the clipboard is set (see below).
-        std::fs::File::create(&path).map_err(|e| fill(tx.write_failed, &[&e]))?;
+        std::fs::File::create(&path).map_err(|e| fill(ui.write_failed, &[&e]))?;
     } else {
-        std::fs::write(&path, &body).map_err(|e| fill(tx.write_failed, &[&e]))?;
+        std::fs::write(&path, &body).map_err(|e| fill(ui.write_failed, &[&e]))?;
     }
     let path_str = path.to_string_lossy().into_owned();
 
@@ -293,7 +350,11 @@ fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_l
         _ => None,
     };
     let is_image = image.is_some();
-    clip::set_files(&paths, image.as_ref())?;
+    // Something newer (text, or the next file of the same share) went on the clipboard meanwhile.
+    let current = app.clip_seq.load(Ordering::SeqCst) == seq;
+    if current {
+        clip::set_files(&paths, image.as_ref())?;
+    }
 
     // The decoded HEIC is written as a file off the request path: pasting the picture into an app
     // is ready right away; the file for Explorer follows shortly after.
@@ -315,8 +376,10 @@ fn receive(req: &mut Request, app: &App, tx: &Texts, notifications: bool, open_l
         (false, 1) => fill(ui.got_file, &[&shown]),
         (false, n) => fill(ui.got_files, &[&n]),
     };
-    notify(notifications, msg);
-    Ok(if is_image { tx.sent_image } else { tx.sent_file }.into())
+    if current {
+        notify(notifications, msg);
+    }
+    Ok(())
 }
 
 fn shorten(s: &str, max: usize) -> String {
@@ -441,3 +504,22 @@ fn zip_paths(paths: &[PathBuf]) -> Result<Vec<u8>, String> {
     Ok(zip.finish().map_err(|e| e.to_string())?.into_inner())
 }
 
+
+#[cfg(test)]
+mod bench {
+    /// `BENCH_IMG=<file> cargo test --release bench_image -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_image() {
+        use std::time::Instant;
+        let body = std::fs::read(std::env::var("BENCH_IMG").unwrap()).unwrap();
+        let fmt = image::guess_format(&body).ok();
+        for _ in 0..3 {
+            let t = Instant::now();
+            let img = image::load_from_memory_with_format(&body, fmt.unwrap()).unwrap().to_rgba8();
+            let t_dec = t.elapsed();
+            let dib = crate::clip::rgba_to_dib(&img);
+            println!("{}x{} decode {:?} dib {:?} ({} MB)", img.width(), img.height(), t_dec, t.elapsed() - t_dec, dib.len() >> 20);
+        }
+    }
+}

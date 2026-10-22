@@ -118,9 +118,14 @@ pub fn rgba_to_dib(img: &RgbaImage) -> Vec<u8> {
     out.extend_from_slice(&0u32.to_le_bytes()); // biCompression = BI_RGB
     out.extend_from_slice(&(size as u32).to_le_bytes()); // biSizeImage
     out.extend_from_slice(&[0u8; 16]); // resolution + palette fields
-    for row in img.as_raw().chunks_exact(w as usize * 4).rev() {
-        for px in row.chunks_exact(4) {
-            out.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
+    // Row copies plus an in-place R/B swap: several times faster than pushing pixel by pixel,
+    // which matters for 12-24 MP photos (a 93 MB DIB).
+    let stride = w as usize * 4;
+    out.resize(40 + size, 0);
+    for (dst, src) in out[40..].chunks_exact_mut(stride).zip(img.as_raw().chunks_exact(stride).rev()) {
+        dst.copy_from_slice(src);
+        for px in dst.chunks_exact_mut(4) {
+            px.swap(0, 2);
         }
     }
     out

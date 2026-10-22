@@ -58,8 +58,12 @@ pub fn first_part(body: &[u8], content_type: &str) -> Option<Part> {
 }
 
 /// The `file` (or `text`) field of an `application/x-www-form-urlencoded` body, else the first
-/// non-empty field.
+/// non-empty field. A body without any `=` is plain text that was merely labelled as a form
+/// (`curl --data-binary "hello"` does that) and is returned as it is.
 pub fn urlencoded_field(body: &[u8]) -> Option<Vec<u8>> {
+    if !body.contains(&b'=') {
+        return Some(body.to_vec());
+    }
     let decode = |s: &[u8]| -> Vec<u8> {
         let plus_as_space: Vec<u8> = s.iter().map(|&b| if b == b'+' { b' ' } else { b }).collect();
         percent_encoding::percent_decode(&plus_as_space).collect()
@@ -88,6 +92,7 @@ mod tests {
         let v = super::urlencoded_field(b"file=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Da%2Bb").unwrap();
         assert_eq!(v, b"https://www.google.com/search?q=a+b");
         assert_eq!(super::urlencoded_field(b"x=merhaba+d%C3%BCnya").unwrap(), "merhaba dünya".as_bytes());
+        assert_eq!(super::urlencoded_field(b"hello world").unwrap(), b"hello world");
     }
 
     #[test]
