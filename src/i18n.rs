@@ -31,6 +31,7 @@ pub struct Texts {
     pub menu_autostart: &'static str,
     pub menu_check_updates: &'static str,
     pub menu_update_available: &'static str,
+    pub menu_donate: &'static str,
     pub menu_quit: &'static str,
 
     pub up_to_date: &'static str,
@@ -67,6 +68,7 @@ pub struct Texts {
     pub page_address: &'static str,
     pub page_ip_fallback: &'static str,
     pub page_token: &'static str,
+    pub page_donate: &'static str,
 }
 
 const EN: Texts = Texts {
@@ -88,6 +90,7 @@ const EN: Texts = Texts {
     menu_autostart: "Start with Windows",
     menu_check_updates: "Check for updates (v{})",
     menu_update_available: "New version v{} — download",
+    menu_donate: "☕ Buy me a coffee",
     menu_quit: "Quit",
 
     up_to_date: "ClipBridge is up to date (v{}).",
@@ -124,6 +127,7 @@ const EN: Texts = Texts {
     page_address: "Address",
     page_ip_fallback: "IP address, if the network name doesn't work (the router may change it)",
     page_token: "Token (X-Token header; grouped by four for reading, the dashes are optional)",
+    page_donate: "Find ClipBridge useful? You can {} ☕",
 };
 
 const TR: Texts = Texts {
@@ -145,6 +149,7 @@ const TR: Texts = Texts {
     menu_autostart: "Windows ile başlat",
     menu_check_updates: "Güncellemeleri denetle (v{})",
     menu_update_available: "Yeni sürüm v{} — indir",
+    menu_donate: "☕ Bana kahve ısmarla",
     menu_quit: "Çıkış",
 
     up_to_date: "ClipBridge güncel (v{}).",
@@ -181,6 +186,7 @@ const TR: Texts = Texts {
     page_address: "Adres",
     page_ip_fallback: "Ağ adı çalışmazsa IP adresi (modem değiştirebilir)",
     page_token: "Token (X-Token başlığı; 4'erli gruplar okumayı kolaylaştırmak için, tireler isteğe bağlı)",
+    page_donate: "ClipBridge işine yaradıysa {} ☕",
 };
 
 pub fn texts(lang: Lang) -> &'static Texts {

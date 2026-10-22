@@ -7,6 +7,12 @@ Telefonda uygulama yok, bulut yok, hesap yok.</p>
 
 <p align="center"><a href="README.md">English</a> · <b>Türkçe</b></p>
 
+<p align="center">
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/batuhancakmak)
+
+</p>
+
 ---
 
 ClipBridge, Windows'ta tepside çalışan küçük bir programdır (tek exe, ~4 MB). iPhone tarafında App Store uygulaması yok; Apple'ın kendi **Kestirmeler** uygulaması kullanılır. Telefonun arkasına iki kez dokununca iPhone panosu PC'ye gider, üç kez dokununca PC panosu iPhone'a gelir. Her şey ev ağında kalır.
@@ -118,6 +124,10 @@ cargo build --release
 ```
 
 Çıktı: `target/release/clipbridge.exe`. Bir `v*` etiketi gönderildiğinde GitHub Actions exe'yi derleyip Releases'a koyar.
+
+## Destek
+
+ClipBridge işine yaradıysa bana [bir kahve ısmarlayabilirsin](https://buymeacoffee.com/batuhancakmak) ☕. Hata bildirimleri ve katkılar da en az o kadar değerli.
 
 ## Lisans
 

@@ -96,6 +96,7 @@ fn main() {
     let autostart = Arc::new(AtomicBool::new(autostart_on));
     let autostart_item = CheckMenuItem::new(tx.menu_autostart, true, autostart_on, None);
     let update_item = MenuItem::new(i18n::fill(tx.menu_check_updates, &[&env!("CARGO_PKG_VERSION")]), true, None);
+    let donate_item = MenuItem::new(tx.menu_donate, true, None);
     let quit = MenuItem::new(tx.menu_quit, true, None);
 
     menu.append(&title).unwrap();
@@ -114,6 +115,7 @@ fn main() {
         &autostart_item,
         &PredefinedMenuItem::separator(),
         &update_item,
+        &donate_item,
         &quit,
     ])
     .unwrap();
@@ -136,6 +138,7 @@ fn main() {
         autostart_item.id().clone(),
         links_item.id().clone(),
         update_item.id().clone(),
+        donate_item.id().clone(),
         quit.id().clone(),
     );
     let main_thread = unsafe { GetCurrentThreadId() };
@@ -147,7 +150,7 @@ fn main() {
 
     let menu_release = release.clone();
     MenuEvent::set_event_handler(Some(move |ev: MenuEvent| {
-        let (show_info, copy_addr, copy_token, open_dir, open_log, notif, auto, links, update, quit) = &ids;
+        let (show_info, copy_addr, copy_token, open_dir, open_log, notif, auto, links, update, donate, quit) = &ids;
         let id = &ev.id;
         if id == show_info {
             show_connection_page(port);
@@ -180,6 +183,8 @@ fn main() {
                 Some(r) => util::open_url(&r.url),
                 None => check_now(menu_release.clone(), main_thread),
             }
+        } else if id == donate {
+            util::open_url(update::DONATE_URL);
         } else if id == quit {
             unsafe { PostQuitMessage(0) };
         }

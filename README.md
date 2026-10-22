@@ -7,6 +7,12 @@ No app on the phone, no cloud, no account.</p>
 
 <p align="center"><b>English</b> · <a href="README.tr.md">Türkçe</a></p>
 
+<p align="center">
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/batuhancakmak)
+
+</p>
+
 ---
 
 ClipBridge is a small Windows tray app (a single ~4 MB exe). On the iPhone there is no App Store app: it uses Apple's own **Shortcuts**. Double-tap the back of the phone and the iPhone clipboard goes to the PC; triple-tap and the PC clipboard comes to the iPhone. Everything stays on your home network.
@@ -118,6 +124,10 @@ cargo build --release
 ```
 
 Output: `target/release/clipbridge.exe`. Pushing a `v*` tag makes GitHub Actions build the exe and publish it on Releases.
+
+## Support
+
+If ClipBridge saves you some time, you can [buy me a coffee](https://buymeacoffee.com/batuhancakmak) ☕. Bug reports and pull requests help just as much.
 
 ## License
 

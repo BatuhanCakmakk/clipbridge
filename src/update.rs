@@ -3,6 +3,8 @@
 use std::time::Duration;
 
 pub const REPO: &str = "BatuhanCakmakk/clipbridge";
+/// Tray menu and setup page link for supporting the project.
+pub const DONATE_URL: &str = "https://buymeacoffee.com/batuhancakmak";
 
 #[derive(Clone)]
 pub struct Release {

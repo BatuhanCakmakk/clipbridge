@@ -179,12 +179,13 @@ fn connection_page(cfg: &Config) -> String {
     let ips: String = util::lan_ips().iter().map(|ip| format!("<div class=s>http://{ip}:{}</div>", cfg.port)).collect();
     let repo = crate::update::REPO;
     let link = format!(r#"<a href="https://github.com/{repo}{}">github.com/{repo}</a>"#, tx.readme_setup);
+    let donate_link = format!(r#"<a href="{}">{}</a>"#, crate::update::DONATE_URL, tx.menu_donate.trim_start_matches('☕').trim().to_lowercase());
     format!(
         r#"<!doctype html><html lang={lang}><meta charset=utf-8><title>{title}</title>
 <style>body{{font-family:Segoe UI,sans-serif;margin:40px;color:#1d1d1f;background:#fff;max-width:900px}}h1{{font-weight:500}}
 .row{{display:flex;gap:48px;flex-wrap:wrap;align-items:flex-start}}.qr svg{{width:300px;height:300px}}
 .l{{color:#666;margin-top:24px}}.v{{font:600 30px Consolas,monospace;letter-spacing:1px;margin:6px 0;word-break:break-all}}
-.s{{font:18px Consolas,monospace;color:#444}}.n{{color:#555;line-height:1.6}}ol{{line-height:1.8}}a{{color:#0a66d8}}</style>
+.s{{font:18px Consolas,monospace;color:#444}}.n{{color:#555;line-height:1.6}}ol{{line-height:1.8}}a{{color:#0a66d8}}.d{{color:#888;margin-top:40px;font-size:14px}}</style>
 <h1>{title}</h1>
 <div class=row><div class=qr>{qr}</div><div>
 <ol><li>{step1}</li><li>{step2}</li><li>{step3}</li></ol>
@@ -192,7 +193,8 @@ fn connection_page(cfg: &Config) -> String {
 </div></div>
 <div class=l>{address}</div><div class=v>{local_url}</div>
 <div class=l>{ip_fallback}</div>{ips}
-<div class=l>{token_label}</div><div class=v>{grouped}</div>"#,
+<div class=l>{token_label}</div><div class=v>{grouped}</div>
+<p class=d>{donate}</p>"#,
         lang = tx.html_lang,
         title = tx.page_title,
         step1 = fill(tx.page_step1, &[&link]),
@@ -203,6 +205,7 @@ fn connection_page(cfg: &Config) -> String {
         ip_fallback = tx.page_ip_fallback,
         token_label = tx.page_token,
         grouped = grouped.join("-"),
+        donate = fill(tx.page_donate, &[&donate_link]),
     )
 }
 
