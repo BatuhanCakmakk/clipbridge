@@ -36,14 +36,15 @@ ClipBridge, Windows'ta tepside çalışan küçük bir programdır (tek exe, ~4 
 ### 2. iPhone
 
 1. Üç kestirmeyi ekle:
-   - [ClipBridge Setup](ICLOUD_SETUP)
-   - [Send to PC](ICLOUD_SEND)
-   - [Get from PC](ICLOUD_GET)
+   - [ClipBridge Setup](https://www.icloud.com/shortcuts/0bacffec409047adb8eabd7d4bb0a65c)
+   - [Send to PC](https://www.icloud.com/shortcuts/12564ab439004261af1ad149a6d74f32)
+   - [Get from PC](https://www.icloud.com/shortcuts/e10c7003c8b44877b02c01c309e0ad22)
 2. **ClipBridge Setup** kestirmesini çalıştır ve kamerayı PC ekranındaki QR koda tut.
 3. Ayarlar → Erişilebilirlik → Dokunma → **Arkaya Dokun**:
    - **Çift Dokunma** → Send to PC
    - **Üçlü Dokunma** → Get from PC
 4. İlk seferde iOS yerel ağ izni ister: **İzin Ver**.
+5. İsteğe bağlı ama önerilir: Dosyalar uygulamasında `iCloud Drive/Shortcuts/ClipBridge.txt` dosyasına uzun bas → **İndirilmiş Öğeyi Tut**. Kestirmeler dosyayı iCloud yerine telefondan okur; daha hızlıdır ve internet kesikken de çalışır.
 
 Kestirmeleri kendin kurmak istersen: [docs/KESTIRMELER.md](docs/KESTIRMELER.md)
 

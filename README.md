@@ -36,14 +36,15 @@ ClipBridge is a small Windows tray app (a single ~4 MB exe). On the iPhone there
 ### 2. iPhone
 
 1. Add the three shortcuts:
-   - [ClipBridge Setup](ICLOUD_SETUP)
-   - [Send to PC](ICLOUD_SEND)
-   - [Get from PC](ICLOUD_GET)
+   - [ClipBridge Setup](https://www.icloud.com/shortcuts/0bacffec409047adb8eabd7d4bb0a65c)
+   - [Send to PC](https://www.icloud.com/shortcuts/12564ab439004261af1ad149a6d74f32)
+   - [Get from PC](https://www.icloud.com/shortcuts/e10c7003c8b44877b02c01c309e0ad22)
 2. Run **ClipBridge Setup** and point the camera at the QR code on the PC screen.
 3. Settings → Accessibility → Touch → **Back Tap**:
    - **Double Tap** → Send to PC
    - **Triple Tap** → Get from PC
 4. The first time, iOS asks for local network access: **Allow**.
+5. Optional but recommended: in the Files app, long-press `iCloud Drive/Shortcuts/ClipBridge.txt` → **Keep Downloaded**. The shortcuts then read it from the phone instead of iCloud, which is faster and works when the internet is down.
 
 To build the shortcuts yourself: [docs/SHORTCUTS.md](docs/SHORTCUTS.md)
 
