@@ -60,7 +60,7 @@ fn main() {
         }
     }
     let local_url = config.local_url();
-    let _mdns = mdns::announce(&config.hostname, port);
+    mdns::spawn(&config.hostname, port);
     let notifications = Arc::new(AtomicBool::new(config.notifications));
     let app = Arc::new(App::new(config));
 
